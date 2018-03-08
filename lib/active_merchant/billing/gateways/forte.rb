@@ -23,6 +23,7 @@ module ActiveMerchant #:nodoc:
       def purchase(money, payment_method, options={})
         post = {}
         add_amount(post, money, options)
+        add_invoice(post, options)
         add_payment_method(post, payment_method)
         add_billing_address(post, payment_method, options)
         add_shipping_address(post, options)
@@ -34,6 +35,7 @@ module ActiveMerchant #:nodoc:
       def authorize(money, payment_method, options={})
         post = {}
         add_amount(post, money, options)
+        add_invoice(post, options)
         add_payment_method(post, payment_method)
         add_billing_address(post, payment_method, options)
         add_shipping_address(post, options)
@@ -45,7 +47,7 @@ module ActiveMerchant #:nodoc:
       def capture(money, authorization, options={})
         post = {}
         post[:transaction_id] = transaction_id_from(authorization)
-        post[:authorization_code] = authorization_code_from(authorization)
+        post[:authorization_code] = authorization_code_from(authorization) || ""
         post[:action] = "capture"
 
         commit(:put, post)
@@ -54,6 +56,7 @@ module ActiveMerchant #:nodoc:
       def credit(money, payment_method, options={})
         post = {}
         add_amount(post, money, options)
+        add_invoice(post, options)
         add_payment_method(post, payment_method)
         add_billing_address(post, payment_method, options)
         post[:action] = "disburse"
@@ -93,6 +96,10 @@ module ActiveMerchant #:nodoc:
       def add_auth(post)
         post[:account_id] = "act_#{@options[:account_id]}"
         post[:location_id] = "loc_#{@options[:location_id]}"
+      end
+
+      def add_invoice(post, options)
+        post[:order_number] = options[:order_id]
       end
 
       def add_amount(post, money, options)
@@ -203,7 +210,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def authorization_from(response)
-        [response["transaction_id"], response["authorization_code"]].join("#")
+        [response.try(:[], "transaction_id"), response.try(:[], "response").try(:[], "authorization_code")].join("#")
       end
 
       def endpoint

@@ -1,11 +1,14 @@
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     class JetpayGateway < Gateway
+      class_attribute :live_us_url, :live_ca_url
+
       self.test_url = 'https://test1.jetpay.com/jetpay'
-      self.live_url = 'https://gateway17.jetpay.com/jetpay'
+      self.live_us_url = 'https://gateway17.jetpay.com/jetpay'
+      self.live_ca_url = 'https://gateway17.jetpay.com/canada-bb'
 
       # The countries the gateway supports merchants from as 2 digit ISO country codes
-      self.supported_countries = ['US']
+      self.supported_countries = ['US', 'CA']
 
       # The card types supported by the payment gateway
       self.supported_cardtypes = [:visa, :master, :american_express, :discover]
@@ -20,7 +23,7 @@ module ActiveMerchant #:nodoc:
       self.money_format = :cents
 
       ACTION_CODE_MESSAGES = {
-        "000" =>  "Approved.",        
+        "000" =>  "Approved.",
         "001" =>  "Refer to card issuer.",
         "002" =>  "Refer to card issuer, special condition.",
         "003" =>  "Invalid merchant or service provider.",
@@ -162,12 +165,15 @@ module ActiveMerchant #:nodoc:
       end
 
       def capture(money, reference, options = {})
-        commit(money, build_capture_request(reference.split(";").first, money, options))
+        split_authorization = reference.split(";")
+        transaction_id = split_authorization[0]
+        token = split_authorization[3]
+        commit(money, build_capture_request(transaction_id, money, options), token)
       end
 
       def void(reference, options = {})
         transaction_id, approval, amount, token = reference.split(";")
-        commit(amount.to_i, build_void_request(amount.to_i, transaction_id, approval, token))
+        commit(amount.to_i, build_void_request(amount.to_i, transaction_id, approval, token, options), token)
       end
 
       def credit(money, transaction_id_or_card, options = {})
@@ -180,9 +186,9 @@ module ActiveMerchant #:nodoc:
       end
 
       def refund(money, reference, options = {})
-        params = reference.split(";")
-        transaction_id = params[0]
-        token = params[3]
+        split_authorization = reference.split(";")
+        transaction_id = split_authorization[0]
+        token = split_authorization[3]
         credit_card = options[:credit_card]
         commit(money, build_credit_request('CREDIT', money, transaction_id, credit_card, token, options))
       end
@@ -200,13 +206,16 @@ module ActiveMerchant #:nodoc:
 
       private
 
-      def build_xml_request(transaction_type, transaction_id = nil, &block)
+      def build_xml_request(transaction_type, options = {}, transaction_id = nil, &block)
         xml = Builder::XmlMarkup.new
         xml.tag! 'JetPay' do
           # The basic values needed for any request
           xml.tag! 'TerminalID', @options[:login]
           xml.tag! 'TransactionType', transaction_type
           xml.tag! 'TransactionID', transaction_id.nil? ? generate_unique_id.slice(0, 18) : transaction_id
+          if options && options[:origin]
+            xml.tag! 'Origin', options[:origin]
+          end
 
           if block_given?
             yield xml
@@ -217,7 +226,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def build_sale_request(money, credit_card, options)
-        build_xml_request('SALE') do |xml|
+        build_xml_request('SALE', options) do |xml|
           add_credit_card(xml, credit_card)
           add_addresses(xml, options)
           add_customer_data(xml, options)
@@ -243,14 +252,14 @@ module ActiveMerchant #:nodoc:
       end
 
       def build_capture_request(transaction_id, money, options)
-        build_xml_request('CAPT', transaction_id) do |xml|
+        build_xml_request('CAPT', options, transaction_id) do |xml|
           xml.tag! 'TotalAmount', amount(money)
           add_user_defined_fields(xml, options)
         end
       end
 
-      def build_void_request(money, transaction_id, approval, token)
-        build_xml_request('VOID', transaction_id) do |xml|
+      def build_void_request(money, transaction_id, approval, token, options)
+        build_xml_request('VOID', options, transaction_id) do |xml|
           xml.tag! 'Approval', approval
           xml.tag! 'TotalAmount', amount(money)
           xml.tag! 'Token', token if token
@@ -260,7 +269,7 @@ module ActiveMerchant #:nodoc:
 
       # `transaction_id` may be nil for unlinked credit transactions.
       def build_credit_request(transaction_type, money, transaction_id, card, token, options)
-        build_xml_request(transaction_type, transaction_id) do |xml|
+        build_xml_request(transaction_type, options, transaction_id) do |xml|
           add_credit_card(xml, card) if card
           add_invoice_data(xml, options)
           add_addresses(xml, options)
@@ -273,18 +282,23 @@ module ActiveMerchant #:nodoc:
         end
       end
 
-      def commit(money, request)
-        response = parse(ssl_post(test? ? self.test_url : self.live_url, request))
+      def commit(money, request, token = nil)
+        response = parse(ssl_post(url, request))
 
         success = success?(response)
         Response.new(success,
           success ? 'APPROVED' : message_from(response),
           response,
           :test => test?,
-          :authorization => authorization_from(response, money),
+          :authorization => authorization_from(response, money, token),
           :avs_result => { :code => response[:avs] },
           :cvv_result => response[:cvv2]
         )
+      end
+
+      def url
+        live_url = @options[:region] == 'CA' ? live_ca_url : live_us_url
+        test? ? test_url : live_url
       end
 
       def parse(body)
@@ -319,9 +333,9 @@ module ActiveMerchant #:nodoc:
         ACTION_CODE_MESSAGES[response[:action_code]]
       end
 
-      def authorization_from(response, money)
+      def authorization_from(response, money, previous_token)
         original_amount = amount(money) if money
-        [ response[:transaction_id], response[:approval], original_amount, response[:token]].join(";")
+        [ response[:transaction_id], response[:approval], original_amount, (response[:token] || previous_token)].join(";")
       end
 
       def add_credit_card(xml, credit_card)

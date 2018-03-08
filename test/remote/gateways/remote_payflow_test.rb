@@ -129,6 +129,16 @@ class RemotePayflowTest < Test::Unit::TestCase
     assert_equal "Verified", response.message
   end
 
+  def test_successful_verify_amex
+    @amex_credit_card = credit_card(
+      '378282246310005',
+      :brand => 'american_express'
+    )
+    assert response = @gateway.verify(@amex_credit_card, @options)
+    assert_success response
+    assert_equal "Approved", response.message
+  end
+
   def test_failed_verify
     assert response = @gateway.verify(credit_card("4000056655665556"), @options)
     assert_failure response
@@ -294,6 +304,13 @@ class RemotePayflowTest < Test::Unit::TestCase
     assert_success credit
   end
 
+  def test_verify_credentials
+    assert @gateway.verify_credentials
+
+    gateway = PayflowGateway.new(login: "unknown_login", password: "unknown_password", partner: "PayPal")
+    assert !gateway.verify_credentials
+  end
+
   def test_purchase_and_refund_with_three_d_secure_option
     amount = 100
 
@@ -342,5 +359,24 @@ class RemotePayflowTest < Test::Unit::TestCase
             :xid => 'UXZEYlNBeFNpYVFzMjQxODk5RTA='
         }
     }
+  end
+
+  def test_transcript_scrubbing
+    transcript = capture_transcript(@gateway) do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end
+    transcript = @gateway.scrub(transcript)
+
+    assert_scrubbed(@credit_card.number, transcript)
+    assert_scrubbed(@credit_card.verification_value, transcript)
+    assert_scrubbed(@gateway.options[:password], transcript)
+
+    transcript = capture_transcript(@gateway) do
+      @gateway.purchase(50, @check)
+    end
+    transcript = @gateway.scrub(transcript)
+
+    assert_scrubbed(@check.account_number, transcript)
+    assert_scrubbed(@gateway.options[:password], transcript)
   end
 end

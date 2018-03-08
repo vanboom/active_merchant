@@ -16,15 +16,63 @@ class RemoteClearhausTest < Test::Unit::TestCase
     assert_equal 'Approved', response.message
   end
 
-  ## Disabling for now because of security
-  # def test_signing_request
-  #   gateway = ClearhausGateway.new(fixtures(:clearhaus_secure))
+  def test_successful_signing_request
+    gateway = ClearhausGateway.new(fixtures(:clearhaus_secure))
 
-  #   assert gateway.options[:signing_key]
-  #   assert auth = gateway.authorize(@amount, @credit_card, @options)
-  #   assert_success auth
-  #   assert_equal 'Approved', auth.message
-  # end
+    assert gateway.options[:private_key]
+    assert auth = gateway.authorize(@amount, @credit_card, @options)
+    assert_success auth
+    assert_equal 'Approved', auth.message
+  end
+
+  def test_cleans_whitespace_from_private_key
+    credentials = fixtures(:clearhaus_secure)
+    credentials[:private_key] = "     #{credentials[:private_key]}     "
+    gateway = ClearhausGateway.new(credentials)
+
+    assert gateway.options[:private_key]
+    assert auth = gateway.authorize(@amount, @credit_card, @options)
+    assert_success auth
+    assert_equal 'Approved', auth.message
+  end
+
+  def test_unsuccessful_signing_request
+    credentials = fixtures(:clearhaus_secure)
+    credentials[:private_key] = "foo"
+    gateway = ClearhausGateway.new(credentials)
+
+    assert gateway.options[:private_key]
+    assert auth = gateway.authorize(@amount, @credit_card, @options)
+    assert_failure auth
+    assert_equal "Neither PUB key nor PRIV key: not enough data", auth.message
+
+    credentials = fixtures(:clearhaus_secure)
+    credentials[:signing_key] = "foo"
+    gateway = ClearhausGateway.new(credentials)
+
+    assert gateway.options[:signing_key]
+    assert auth = gateway.authorize(@amount, @credit_card, @options)
+    assert_failure auth
+    assert_equal "invalid signing api-key", auth.message
+  end
+
+  def test_successful_purchase_without_cvv
+    gateway = ClearhausGateway.new(fixtures(:clearhaus_secure))
+    credit_card = credit_card('4111111111111111', verification_value: nil)
+    response = gateway.purchase(@amount, credit_card, @options)
+
+    assert_success response
+    assert_equal 'Approved', response.message
+  end
+
+  def test_successful_purchase_with_text_on_statement
+    options = { text_on_statement: "hello" }
+
+    response = @gateway.purchase(@amount, @credit_card, @options.merge(options))
+    assert_success response
+    assert_equal response.params["text_on_statement"], "hello"
+    assert_equal 'Approved', response.message
+  end
 
   def test_successful_purchase_with_more_options
     options = {
@@ -70,7 +118,7 @@ class RemoteClearhausTest < Test::Unit::TestCase
   end
 
   def test_failed_capture
-    response = @gateway.capture(@amount, '')
+    response = @gateway.capture(@amount, 'z')
     assert_failure response
     assert_equal 'invalid transaction id', response.message
   end
@@ -96,6 +144,16 @@ class RemoteClearhausTest < Test::Unit::TestCase
     response = @gateway.refund(@amount, '123')
     assert_failure response
     assert_equal 'invalid transaction id', response.message
+  end
+
+  def test_successful_refund_of_capture
+    auth = @gateway.authorize(@amount, @credit_card, @options)
+    capture = @gateway.capture(@amount, auth.authorization)
+    assert_success capture
+
+    assert refund = @gateway.refund(@amount, capture.authorization)
+    assert_success refund
+    assert_equal 'Approved', refund.message
   end
 
   def test_successful_void
@@ -125,11 +183,27 @@ class RemoteClearhausTest < Test::Unit::TestCase
     assert_match %r{Invalid card number}, response.message
   end
 
+  def test_successful_authorize_with_nonfractional_currency
+    assert response = @gateway.authorize(100, @credit_card, @options.merge(:currency => 'KRW'))
+    assert_equal 1, response.params['amount']
+    assert_success response
+  end
+
   def test_invalid_login
     gateway = ClearhausGateway.new(api_key: 'test')
 
     assert_raise ActiveMerchant::ResponseError do
       gateway.purchase(@amount, @credit_card, @options)
     end
+  end
+
+  def test_transcript_scrubbing
+    transcript = capture_transcript(@gateway) do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end
+    transcript = @gateway.scrub(transcript)
+
+    assert_scrubbed(@credit_card.number, transcript)
+    assert_scrubbed(@credit_card.verification_value, transcript)
   end
 end

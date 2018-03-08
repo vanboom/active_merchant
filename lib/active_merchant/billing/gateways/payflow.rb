@@ -45,7 +45,19 @@ module ActiveMerchant #:nodoc:
       end
 
       def verify(payment, options={})
-        authorize(0, payment, options)
+        if credit_card_type(payment) == 'Amex'
+          MultiResponse.run(:use_first_response) do |r|
+            r.process { authorize(100, payment, options) }
+            r.process(:ignore_result) { void(r.authorization, options) }
+          end
+        else
+          authorize(0, payment, options)
+        end
+      end
+
+      def verify_credentials
+        response = void("0")
+        response.params["result"] != "26"
       end
 
       # Adds or modifies a recurring Payflow profile.  See the Payflow Pro Recurring Billing Guide for more details:
@@ -88,7 +100,20 @@ module ActiveMerchant #:nodoc:
         @express ||= PayflowExpressGateway.new(@options)
       end
 
+      def supports_scrubbing?
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+          gsub(%r((<CardNum>)[^<]*(</CardNum>)), '\1[FILTERED]\2').
+          gsub(%r((<CVNum>)[^<]*(</CVNum>)), '\1[FILTERED]\2').
+          gsub(%r((<AcctNum>)[^<]*(</AcctNum>)), '\1[FILTERED]\2').
+          gsub(%r((<Password>)[^<]*(</Password>)), '\1[FILTERED]\2')
+      end
+
       private
+
       def build_sale_or_authorization_request(action, money, funding_source, options)
         if funding_source.is_a?(String)
           build_reference_sale_or_authorization_request(action, money, funding_source, options)
@@ -146,6 +171,7 @@ module ActiveMerchant #:nodoc:
               xml.tag! 'FreightAmt', options[:freightamt] unless options[:freightamt].blank?
               xml.tag! 'DutyAmt', options[:dutyamt] unless options[:dutyamt].blank?
               xml.tag! 'DiscountAmt', options[:discountamt] unless options[:discountamt].blank?
+              xml.tag! 'EMail', options[:email] unless options[:email].nil?
 
               billing_address = options[:billing_address] || options[:address]
               add_address(xml, 'BillTo', billing_address, options) if billing_address
@@ -318,4 +344,3 @@ module ActiveMerchant #:nodoc:
     end
   end
 end
-

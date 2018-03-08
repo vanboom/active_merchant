@@ -25,6 +25,17 @@ class RemoteFirstdataE4Test < Test::Unit::TestCase
     assert_success response
   end
 
+  def test_successful_purchase_with_network_tokenization
+    @credit_card = network_tokenization_credit_card('4242424242424242',
+      payment_cryptogram: "BwABB4JRdgAAAAAAiFF2AAAAAAA=",
+      verification_value: nil
+    )
+    assert response = @gateway.purchase(@amount, @credit_card, @options)
+    assert_success response
+    assert_equal 'Transaction Normal - Approved', response.message
+    assert_false response.authorization.blank?
+  end
+
   def test_successful_purchase_with_specified_currency
     options_with_specified_currency = @options.merge({currency: 'GBP'})
     assert response = @gateway.purchase(@amount, @credit_card, options_with_specified_currency)
@@ -127,6 +138,15 @@ class RemoteFirstdataE4Test < Test::Unit::TestCase
     assert_success void
   end
 
+  def test_purchase_and_void_with_even_dollar_amount
+    assert purchase = @gateway.purchase(5000, @credit_card, @options)
+    assert_success purchase
+
+    assert purchase.authorization
+    assert void = @gateway.void(purchase.authorization)
+    assert_success void
+  end
+
   def test_authorize_and_capture
     assert auth = @gateway.authorize(@amount, @credit_card, @options)
     assert_success auth
@@ -208,7 +228,25 @@ class RemoteFirstdataE4Test < Test::Unit::TestCase
     assert response.authorization
   end
 
-  def test_dump_transcript
-    # See firstdata_e4_test.rb for an example of a scrubbed transcript
+  def test_verify_credentials
+    assert @gateway.verify_credentials
+
+    gateway = FirstdataE4Gateway.new(login: 'unknown', password: 'unknown')
+    assert !gateway.verify_credentials
+    gateway = FirstdataE4Gateway.new(login: fixtures(:firstdata_e4)[:login], password: 'unknown')
+    assert !gateway.verify_credentials
   end
+
+  def test_transcript_scrubbing
+    cc_with_different_cvc = credit_card(verification_value: '999')
+    transcript = capture_transcript(@gateway) do
+      @gateway.purchase(@amount, cc_with_different_cvc, @options)
+    end
+    transcript = @gateway.scrub(transcript)
+
+    assert_scrubbed(cc_with_different_cvc.number, transcript)
+    assert_scrubbed(cc_with_different_cvc.verification_value, transcript)
+    assert_scrubbed(@gateway.options[:password], transcript)
+  end
+
 end

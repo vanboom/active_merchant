@@ -43,7 +43,7 @@ module ActiveMerchant #:nodoc:
         'USUAL_DATE' => :undoc_usual_date, # Not found in the bp20rebadmin API doc.
       }
 
-      self.supported_countries = ['US']
+      self.supported_countries = ['US', 'CA']
       self.supported_cardtypes = [:visa, :master, :american_express, :discover, :diners_club, :jcb]
       self.homepage_url        = 'http://www.bluepay.com/'
       self.display_name        = 'BluePay'
@@ -472,7 +472,7 @@ module ActiveMerchant #:nodoc:
         post[:encap_char]     = "$"
         post[:card_num]       = '4111111111111111'
         post[:exp_date]       = '1212'
-        post[:solution_ID]    = application_id if(application_id && application_id != "ActiveMerchant")
+        post[:solution_ID]    = application_id if application_id
         post.merge(parameters).collect { |key, value| "#{key}=#{CGI.escape(value.to_s)}" }.join("&")
       end
 
