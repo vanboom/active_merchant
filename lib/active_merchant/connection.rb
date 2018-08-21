@@ -88,6 +88,7 @@ module ActiveMerchant
           end
           puts "Connection:Result:"
           puts result.inspect
+          puts result.body.inspect
           puts "END--------------"
           info "--> %d %s (%d %.4fs)" % [result.code, result.message, result.body ? result.body.length : 0, realtime], tag
           debug result.body
