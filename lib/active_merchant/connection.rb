@@ -86,7 +86,9 @@ module ActiveMerchant
               raise ArgumentError, "Unsupported request method #{method.to_s.upcase}"
             end
           end
-
+          puts "Connection:Result:"
+          puts result.inspect
+          puts "END--------------"
           info "--> %d %s (%d %.4fs)" % [result.code, result.message, result.body ? result.body.length : 0, realtime], tag
           debug result.body
           result
