@@ -36,6 +36,7 @@ module ActiveMerchant #:nodoc:
     end
 
     def ssl_request(method, endpoint, data, headers)
+      puts "BEGIN SSL REQUEST"
       handle_response(raw_ssl_request(method, endpoint, data, headers))
     end
 
