@@ -274,7 +274,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def extract_response_body_or_raise(response_error)
-        Rails.logger.warn response_error.response.inspect
+        puts response_error.response.inspect
         begin
           parse(response_error.response.body)
         rescue JSON::ParserError
