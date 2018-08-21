@@ -75,6 +75,8 @@ module ActiveMerchant #:nodoc:
     def handle_response(response)
       puts "THIS IS THE RESPONSE>....."
       puts response.inspect
+      puts "THIS IS THE RESPONSE.HEADER..."
+      puts response.header.to_hash
       case response.code.to_i
       when 200...300
         response.body
