@@ -190,10 +190,20 @@ module ActiveMerchant #:nodoc:
       def response_object(raw_response)
         parsed_response = parse(raw_response)
 
-        if parsed_response["code"] == "BadRequest"
-          parsed_response["status"] = "BadRequest"
+        # override the status and message when error codes happen
+        case parsed_response["code"].presence
+        when "BadRequest"
+          parsed_response["status"] = "Quickbooks Error: BadRequest"
           parsed_response["message"] = "Check Quickbooks Connection"
+        when "AuthenticationFailed"
+          parsed_response["status"] = "Quickbooks Error: AuthenticationFailed"
+          parsed_response["message"] = "Check Quickbooks Connection"
+        when nil
+        else
+          parsed_response["status"] = parsed_response["code"]
+          parsed_response["message"] = "An error occurred: %s" % parsed_response["code"]
         end
+
         Response.new(
           success?(parsed_response),
           message_from(parsed_response),
@@ -235,7 +245,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def success?(response)
-      return false if response["code"] == "BadRequest"
+      return false if response["code"] == "BadRequest" or response["code"] == "AuthenticationFailed"
       return FRAUD_WARNING_CODES.concat(['0']).include?(response['errors'].first['code']) if response['errors']
 
       !['DECLINED', 'CANCELLED'].include?(response['status'])
