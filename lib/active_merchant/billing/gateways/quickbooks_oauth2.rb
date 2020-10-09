@@ -245,7 +245,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def success?(response)
-      return false if response["code"] == "BadRequest" or response["code"] == "AuthenticationFailed"
+      return false if response["code"] == "BadRequest" or response["code"] == "AuthenticationFailed" or response["code"] == "AuthorizationFailed"
       return FRAUD_WARNING_CODES.concat(['0']).include?(response['errors'].first['code']) if response['errors']
 
       !['DECLINED', 'CANCELLED'].include?(response['status'])
