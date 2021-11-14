@@ -112,7 +112,37 @@ module ActiveMerchant #:nodoc:
           gsub(%r((cvc\D+)\d{3}), '\1[FILTERED]')
       end
 
+      # Store a credit card in Quickbooks Online Payments
+      # Quickbooks needs a customer_id to attach the stored card to - pass this in the options hash
+      def store(credit_card, options = {})
+        post = {updated_at: Time.now.to_i}
+        build_store_request(post, credit_card, options)
+        commit(cards_endpoint(options[:customer_id]), post)
+      end
+
+      ##
+      # Get a list of stored cards
+      def get_cards(customer_id)
+        endpoint = gateway_url + cards_endpoint(customer_id)
+        raw_response = ssl_request(:get, endpoint, nil, headers(:get, endpoint))
+        parse(raw_response)
+      end
+
+      ##
+      # Delete a stored card
+      def delete_card(id, customer_id)
+        endpoint = gateway_url + cards_endpoint(customer_id) + "/#{id}"
+        raw_response = ssl_request(:delete, endpoint, nil, headers(:get, endpoint))
+        parse(raw_response || {success: true}.to_json)
+      end
+
       private
+      ##
+      # Build the request message for storing a credit card
+      def build_store_request(post, credit_card, options)
+        add_creditcard(post, credit_card, options)
+        post.merge!(post.delete(:card))
+      end
 
       def add_charge_data(post, payment, options = {})
         add_payment(post, payment, options)
@@ -140,7 +170,14 @@ module ActiveMerchant #:nodoc:
       end
 
       def add_payment(post, payment, options = {})
-        add_creditcard(post, payment, options)
+        # Logic in other gateways allows passage of a stored payment token
+        # If we store the Quickbooks stored Card ID the same way, we can parse it back out here
+        if payment.is_a?(String)
+          puts "USING TOKEN #{payment}".red
+          post[:cardOnFile] = payment.split(";").first
+        elsif payment.is_a?(ActiveMerchant::Billing::CreditCard)
+          add_creditcard(post, payment, options)
+        end
         add_context(post, options)
       end
 
@@ -148,7 +185,7 @@ module ActiveMerchant #:nodoc:
         card = {}
         card[:number] = creditcard.number
         card[:expMonth] = "%02d" % creditcard.month
-        card[:expYear] = creditcard.year
+        card[:expYear] = creditcard.year.to_s
         card[:cvc] = creditcard.verification_value if creditcard.verification_value?
         card[:name] = creditcard.name if creditcard.name
         card[:commercialCardCode] = options[:card_code] if options[:card_code]
@@ -189,7 +226,7 @@ module ActiveMerchant #:nodoc:
 
       def response_object(raw_response)
         parsed_response = parse(raw_response)
-
+ap parsed_response
         # override the status and message when error codes happen
         case parsed_response["code"].presence
         when "BadRequest"
@@ -279,6 +316,13 @@ module ActiveMerchant #:nodoc:
       def refund_uri(authorization)
         "#{ENDPOINT}/#{CGI.escape(authorization)}/refunds"
       end
+
+      ##
+      # Stored cards endpoint for a specific customer ID
+      def cards_endpoint(customer_id)
+        "/quickbooks/v4/customers/#{customer_id.to_s}/cards"
+      end
+
     end
   end
 end
