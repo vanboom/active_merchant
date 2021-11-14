@@ -173,7 +173,6 @@ module ActiveMerchant #:nodoc:
         # Logic in other gateways allows passage of a stored payment token
         # If we store the Quickbooks stored Card ID the same way, we can parse it back out here
         if payment.is_a?(String)
-          puts "USING TOKEN #{payment}".red
           post[:cardOnFile] = payment.split(";").first
         elsif payment.is_a?(ActiveMerchant::Billing::CreditCard)
           add_creditcard(post, payment, options)
@@ -226,7 +225,6 @@ module ActiveMerchant #:nodoc:
 
       def response_object(raw_response)
         parsed_response = parse(raw_response)
-ap parsed_response
         # override the status and message when error codes happen
         case parsed_response["code"].presence
         when "BadRequest"
