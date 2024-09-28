@@ -786,11 +786,13 @@ module ActiveMerchant
       end
 
       def state_from(address, options)
-        if %w[US CA].include?(address[:country])
-          address[:state] || 'NC'
-        else
-          address[:state] || 'n/a'
-        end
+        # do not default to 'NC' or 'n/a'
+        address[:state].to_s
+        # if %w[US CA].include?(address[:country])
+        #   address[:state] || 'NC'
+        # else
+        #   address[:state] || 'n/a'
+        # end
       end
 
       def subsequent_recurring_transaction?(options)
